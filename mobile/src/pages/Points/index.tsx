@@ -1,21 +1,113 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Constants from 'expo-constants';
 import { Feather as Icon } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
-import { View, StyleSheet, TouchableOpacity, Text, ScrollView, Image } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { View, StyleSheet, TouchableOpacity, Text, ScrollView, Image, Alert } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import { SvgUri } from 'react-native-svg';
+import * as Location from 'expo-location';
+import api from '../../services/api';
+
+interface Item {
+  id: number;
+  title: string;
+  image_url: string;
+}
+
+interface Point {
+  id: number;
+  image: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+interface Params {
+  uf: string;
+  city: string;
+}
 
 const Points = () => {
+  const [items, setItems] = useState<Item[]>([]);
+  const [points, setPoints] = useState<Point[]>([]);
+  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+
+  const [initialPosition, setInitialPosition] = useState<[number, number]>([0, 0]);
 
   const navigation = useNavigation();
+  const route = useRoute();
 
+  const routeParams = route.params as Params;
+
+  // Pegando os itens do backend
+  useEffect(() => {
+    api.get('items').then(response => {
+      setItems(response.data);
+    });
+  }, []);
+
+  // Pegando a posição inicial do usuário 
+  useEffect(() => {
+    async function loadPosition(){
+      // Pedir permissão ao usuario para acessar a location do aparelho //
+      // variavel status vai conter se o usuario deu permissao ou nao
+      const { status } = await Location.requestPermissionsAsync();
+
+      // Se o usuario não der permissão ele retorna um alerta
+      if (status !== 'granted') {
+        Alert.alert('Oooops...', 'Precisamos de sua permissão para obeter a localização');
+        return;
+      }
+
+      // Vai obter a localização
+      const location = await Location.getCurrentPositionAsync();
+
+      const { latitude, longitude } = location.coords;
+
+      setInitialPosition([
+        latitude,
+        longitude
+      ]);
+    }
+
+    loadPosition();
+  }, []);
+
+  // Pegando os pontos de coleta do backend
+  // Toda vez que um item é selecionado ele executa a chamada no backend de novo
+  useEffect(() => {
+    api.get('points', {
+      params: {
+        city: routeParams.city,
+        uf: routeParams.uf,
+        items: selectedItems
+      }
+    }).then(response => {
+      setPoints(response.data);
+    })
+  }, [selectedItems]);
+
+  // Função que volta para a página Home
   function handleNavigateBack() {
     navigation.goBack();
   }
 
-  function handleNavigateToDetail() {
-    navigation.navigate('Detail');
+  // Função que vai para a página de Detalhes
+  function handleNavigateToDetail(id: number) {
+    navigation.navigate('Detail', { point_id: id });
+  }
+
+  // Função que vai checar se o item foi selecionado ou não
+  function handleSelectedItem(id: number) {
+    const alreadySelected = selectedItems.findIndex(item => item === id);
+
+    if (alreadySelected >= 0) {
+      const filteredItems = selectedItems.filter(item => item !== id);
+
+      setSelectedItems(filteredItems);
+    } else {
+      setSelectedItems([...selectedItems, id ]);
+    }
   }
 
   return (
@@ -29,33 +121,40 @@ const Points = () => {
         <Text style={styles.description}>Encontre no mapa um ponto de coleta.</Text>
 
         <View style={styles.mapContainer}>
-          <MapView 
+          { initialPosition[0] !== 0 && (
+            <MapView 
             style={styles.map} 
             initialRegion={{
-              latitude: -20.6665538,
-              longitude: -43.7812763,
+              latitude: initialPosition[0],
+              longitude: initialPosition[1],
               latitudeDelta: 0.014,
               longitudeDelta: 0.014,
-            }}
-          >
-              <Marker
-                onPress={handleNavigateToDetail}
-                style={styles.mapMarker} 
-                coordinate={{
-                  latitude: -20.6665538,
-                  longitude: -43.7812763,
-                }} 
-              >
-                <View style={styles.mapMarkerContainer}>
-                  <Image 
-                    style={styles.mapMarkerImage} 
-                    source={{ uri: 'https://images.unsplash.com/photo-1556767576-5ec41e3239ea?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=400&q=60' }} 
-                  />
-                  <Text style={styles.mapMarkerTitle}>Mercado</Text>
-                </View>
+              }}
+            >
+
+              {points.map(point => (
+                <Marker
+                  key={String(point.id)}
+                  style={styles.mapMarker} 
+                  onPress={() => handleNavigateToDetail(point.id)}
+                  coordinate={{
+                    latitude: point.latitude,
+                    longitude: point.longitude,
+                  }} 
+                >
+                  <View style={styles.mapMarkerContainer}>
+                    <Image 
+                      style={styles.mapMarkerImage} 
+                      source={{ uri: point.image }} 
+                    />
+                    <Text style={styles.mapMarkerTitle}>{point.name}</Text>
+                  </View>
                 
               </Marker>
+              ))}
+                
             </MapView>
+          ) }
         </View>
       </View>
 
@@ -68,35 +167,21 @@ const Points = () => {
             paddingHorizontal: 20
           }}
         >
-          <TouchableOpacity style={styles.item} onPress={() => {}}>
-            <SvgUri width={42} height={42} uri="http://192.168.2.101:3333/uploads/lampadas.svg"/>
-            <Text style={styles.itemTitle}>Lâmpadas</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.item} onPress={() => {}}>
-            <SvgUri width={42} height={42} uri="http://192.168.2.101:3333/uploads/lampadas.svg"/>
-            <Text style={styles.itemTitle}>Lâmpadas</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.item} onPress={() => {}}>
-            <SvgUri width={42} height={42} uri="http://192.168.2.101:3333/uploads/lampadas.svg"/>
-            <Text style={styles.itemTitle}>Lâmpadas</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.item} onPress={() => {}}>
-            <SvgUri width={42} height={42} uri="http://192.168.2.101:3333/uploads/lampadas.svg"/>
-            <Text style={styles.itemTitle}>Lâmpadas</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.item} onPress={() => {}}>
-            <SvgUri width={42} height={42} uri="http://192.168.2.101:3333/uploads/lampadas.svg"/>
-            <Text style={styles.itemTitle}>Lâmpadas</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.item} onPress={() => {}}>
-            <SvgUri width={42} height={42} uri="http://192.168.2.101:3333/uploads/lampadas.svg"/>
-            <Text style={styles.itemTitle}>Lâmpadas</Text>
-          </TouchableOpacity>
+          {items.map(item => (
+            <TouchableOpacity 
+              key={String(item.id)} 
+              style={[
+                styles.item,
+                // estilo aplicado quando o item é selecionado
+                selectedItems.includes(item.id) ? styles.selectedItem : {}
+              ]} 
+              activeOpacity={0.6} 
+              onPress={() => handleSelectedItem(item.id)}
+            >
+              <SvgUri width={42} height={42} uri={item.image_url}/>
+              <Text style={styles.itemTitle}>{item.title}</Text>
+            </TouchableOpacity>
+          ))}
         </ScrollView>
       </View>
     </>
